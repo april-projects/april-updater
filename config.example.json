@@ -1,0 +1,26 @@
+{
+  "servers": [
+    {
+      "name": "1.2.3.4",
+      "host": "1.2.3.4",
+      "port": 22,
+      "username": "root",
+      "privateKeyPath": "keys/1.2.3.4.pem",
+      "services": [
+        {
+          "name": "order-service",
+          "localJarDir": "~/Developer/jars/order-service",
+          "healthCheck": {
+            "timeoutSec": 120,
+            "intervalSec": 5
+          },
+          "remoteJarPath": "/opt/order-service/app.jar",
+          "containerName": "order-service",
+          "restartCommand": "docker restart order-service",
+          "restartTimeoutSec": 60,
+          "healthUrl": "http://1.2.3.4:8080/actuator/health"
+        }
+      ]
+    }
+  ]
+}

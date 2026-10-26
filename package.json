@@ -1,0 +1,17 @@
+{
+  "name": "april-java-updater",
+  "version": "0.1.0",
+  "description": "多服务器 Java 服务自动化发布/回滚工具",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ssh2": "^1.17.0"
+  }
+}

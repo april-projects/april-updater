@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Java Updater · Java 服务更新</title>
+<style>
+  :root {
+    --bg: #0d1017; --bg2: #11141c; --card: #161a23; --card2: #1b202b;
+    --line: #262c38; --line2: #333a49;
+    --text: #e6e9f0; --muted: #8b93a5;
+    --dim: #5d6575;
+    --primary: #4d7cff; --primary2: #6c5cff; --ok: #2ecc8f; --warn: #ffb020; --err: #ff5c5c;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0; background:
+      radial-gradient(1200px 500px at 80% -10%, rgba(108, 92, 255, .12), transparent 60%),
+      radial-gradient(900px 400px at 10% -10%, rgba(77, 124, 255, .10), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.65 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    min-height: 100vh;
+  }
+  ::selection { background: rgba(77,124,255,.35); }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 28px;
+    background: rgba(17, 20, 28, .8); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo .mark {
+    width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--primary), var(--primary2));
+    font-size: 18px; box-shadow: 0 4px 18px rgba(77,124,255,.35);
+  }
+  .logo h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .3px; }
+  .logo .sub { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  header .actions { display: flex; gap: 10px; }
+
+  main { max-width: 1140px; margin: 24px auto; padding: 0 20px 40px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+
+  .card {
+    background: linear-gradient(180deg, var(--card), var(--bg2));
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 20px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.25);
+  }
+  .card h2 {
+    font-size: 13px; margin: 0 0 14px; color: var(--muted); font-weight: 600;
+    letter-spacing: 1px; display: flex; align-items: center; gap: 8px;
+  }
+  .card h2 .n {
+    width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+    background: rgba(77,124,255,.15); color: var(--primary); font-size: 11px;
+  }
+  .full { grid-column: 1 / -1; }
+
+  label { display: block; margin: 12px 0 5px; color: var(--muted); font-size: 12.5px; }
+  select, input[type=text], input[type=password] {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--line2); border-radius: 10px;
+    font-size: 14px; background: var(--card2); color: var(--text); outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  select:focus, input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(77,124,255,.15); }
+  input[type=file] { color: var(--muted); font-size: 13px; }
+  input[type=file]::file-selector-button {
+    margin-right: 12px; padding: 6px 14px; border: 1px solid var(--line2); border-radius: 8px;
+    background: var(--card2); color: var(--text); cursor: pointer; font-size: 13px;
+  }
+
+  button {
+    cursor: pointer; border: none; border-radius: 10px; padding: 9px 18px;
+    font-size: 13.5px; font-weight: 500; color: #fff;
+    background: linear-gradient(135deg, var(--primary), var(--primary2));
+    transition: transform .1s, box-shadow .15s, opacity .15s;
+    box-shadow: 0 2px 10px rgba(77,124,255,.25);
+  }
+  button:hover:not(:disabled) { box-shadow: 0 4px 16px rgba(77,124,255,.4); transform: translateY(-1px); }
+  button:active:not(:disabled) { transform: translateY(0); }
+  button.ghost {
+    background: var(--card2); color: var(--text); border: 1px solid var(--line2); box-shadow: none;
+  }
+  button.ghost:hover:not(:disabled) { border-color: var(--primary); box-shadow: none; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.sm { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
+
+  #deployBtn {
+    width: 100%; padding: 13px; font-size: 15px; font-weight: 600; margin-top: 16px;
+    letter-spacing: 1px;
+  }
+
+  .jar-list {
+    border: 1px solid var(--line); border-radius: 12px; margin-top: 8px;
+    max-height: 218px; overflow: auto; background: var(--card2);
+  }
+  .jar-list::-webkit-scrollbar { width: 8px; }
+  .jar-list::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 4px; }
+  .jar-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 9px 14px; cursor: pointer; border-bottom: 1px solid var(--line);
+    transition: background .1s;
+  }
+  .jar-item:last-child { border-bottom: none; }
+  .jar-item:hover { background: rgba(77,124,255,.08); }
+  .jar-item.sel { background: rgba(77,124,255,.16); color: #9db8ff; font-weight: 600;
+    box-shadow: inset 3px 0 0 var(--primary); }
+  .jar-item .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  .svc-list { margin-top: 6px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--card2); overflow: hidden; max-height: 260px; overflow-y: auto; }
+  .svc-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer;
+    border-bottom: 1px solid var(--line); transition: background .1s;
+  }
+  .svc-row:last-child { border-bottom: none; }
+  .svc-row:hover { background: rgba(77,124,255,.08); }
+  .svc-row.on { background: rgba(77,124,255,.14); box-shadow: inset 3px 0 0 var(--primary); }
+  .svc-row input[type=radio] { accent-color: var(--primary); width: auto; }
+  .svc-row .name { font-weight: 600; }
+  .svc-row .path { color: var(--muted); font-size: 12px; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 8px rgba(46,204,143,.6); }
+  .dot.err { background: var(--err); box-shadow: 0 0 8px rgba(255,92,92,.6); }
+
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .empty { color: var(--dim); text-align: center; padding: 26px 0; font-size: 13px; }
+
+  .toolbar { display: flex; gap: 8px; margin-top: 12px; }
+  #statusText {
+    margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px;
+    background: var(--card2); border: 1px solid var(--line); white-space: pre-wrap;
+    font-family: ui-monospace, monospace; min-height: 20px; color: var(--muted);
+  }
+
+  .job {
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+    background: var(--card2);
+  }
+  .job .head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .job .head b { font-size: 13.5px; }
+  .badge { font-size: 11.5px; padding: 2px 10px; border-radius: 20px; font-weight: 600; letter-spacing: .5px; }
+  .badge.running { background: rgba(77,124,255,.15); color: #9db8ff; animation: pulse 1.2s infinite; }
+  .badge.success { background: rgba(46,204,143,.14); color: var(--ok); }
+  .badge.failed { background: rgba(255,92,92,.14); color: var(--err); }
+  .badge.rolled-back { background: rgba(255,176,32,.14); color: var(--warn); }
+  @keyframes pulse { 50% { opacity: .55; } }
+
+  .step { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: 13.5px; }
+  .step .icon { width: 16px; text-align: center; flex: none; }
+  .step.done .icon::after { content: "✔"; color: var(--ok); }
+  .step.running .icon::after { content: "●"; color: var(--primary); animation: pulse 1s infinite; }
+  .step.failed .icon::after { content: "✘"; color: var(--err); }
+  .step.skipped .icon::after { content: "○"; color: var(--dim); }
+  .step.failed { color: var(--err); }
+  .step .smsg { color: var(--muted); font-size: 12px; }
+
+  dialog {
+    border: 1px solid var(--line2); border-radius: var(--radius); width: 760px; max-width: 94vw;
+    background: var(--card); color: var(--text); box-shadow: 0 20px 60px rgba(0,0,0,.5);
+    padding: 22px;
+  }
+  dialog::backdrop { background: rgba(5, 8, 14, .7); backdrop-filter: blur(4px); }
+  dialog h2 { margin: 0 0 10px; font-size: 16px; }
+  textarea {
+    width: 100%; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--line2); border-radius: 10px; padding: 12px;
+    background: var(--bg2); color: var(--text); outline: none; resize: vertical;
+  }
+  textarea:focus { border-color: var(--primary); }
+  #onboardText { height: 190px; }
+  #configText { height: 52vh; }
+  .dlg-foot { margin-top: 14px; display: flex; gap: 10px; justify-content: flex-end; }
+
+  .hint {
+    margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; color: var(--muted);
+    background: rgba(77,124,255,.06); border: 1px dashed var(--line2);
+  }
+  .hint b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="mark">🚀</div>
+    <div>
+      <h1>Java Updater</h1>
+      <div class="sub">Java 服务自动化更新 · 上传 / 重启 / 健康检查 / 回滚</div>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="ghost" onclick="openOnboard()">＋ 接入服务器</button>
+    <button class="ghost" onclick="openConfig()">编辑配置</button>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <h2><span class="n">1</span>选择服务器与服务</h2>
+    <label>服务器</label>
+    <select id="serverSel" onchange="onServerChange()"></select>
+    <label>该服务器上的 Java 服务</label>
+    <div class="svc-list" id="serviceList"><div class="empty">选择服务器后列出服务</div></div>
+    <div class="toolbar">
+      <button class="ghost sm" onclick="pingServer(this)">⚡ 测试 SSH</button>
+      <button class="ghost sm" onclick="showServiceStatus(this)">📊 服务状态</button>
+    </div>
+    <div id="statusText"></div>
+  </section>
+
+  <section class="card">
+    <h2><span class="n">2</span>选择 jar 并部署</h2>
+    <label>构建产物目录 <span id="jarDir" class="muted"></span></label>
+    <div class="jar-list" id="jarList"><div class="empty">选择服务后加载 jar 列表</div></div>
+    <label>或上传新 jar</label>
+    <input type="file" id="jarFile" accept=".jar" onchange="updateDeployBtn()">
+    <button id="deployBtn" onclick="deploy()" disabled>🚀 开始部署</button>
+    <div class="hint">
+      <b>部署流程</b>：备份旧 jar → 上传新 jar → 重启容器 → 健康检查轮询；
+      任一步失败自动<b>回滚</b>到旧版本。
+    </div>
+  </section>
+
+  <section class="card full">
+    <h2><span class="n">3</span>部署进度与历史</h2>
+    <div id="jobs"><div class="empty">暂无部署记录</div></div>
+  </section>
+</main>
+
+<dialog id="onboardDlg">
+  <h2>批量接入服务器（密钥模式）</h2>
+  <p class="muted" style="margin:4px 0 12px">
+    每台服务器一段：先一行 IP，紧接着粘贴对应私钥（BEGIN…END 整块），多台连续粘贴即可。<br>
+    私钥保存到工具 <b>keys/</b> 目录（权限 600），配置里只引用文件路径，不会明文展示。
+  </p>
+  <label>IP + 私钥</label>
+  <textarea id="onboardText" placeholder="47.83.16.102
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjE...
+-----END OPENSSH PRIVATE KEY-----
+8.8.8.8
+-----BEGIN OPENSSH PRIVATE KEY-----
+..."></textarea>
+  <div style="margin:12px 0"><button id="onboardScanBtn" onclick="onboardScan()">🔍 扫描</button></div>
+  <div id="onboardResult" style="max-height:38vh; overflow:auto"></div>
+  <div class="dlg-foot">
+    <button class="ghost" onclick="onboardDlg.close()">关闭</button>
+    <button id="onboardSaveBtn" onclick="onboardSave()" disabled>保存到配置</button>
+  </div>
+</dialog>
+
+<dialog id="configDlg">
+  <h2>config.json</h2>
+  <p class="muted" style="margin:0 0 10px">password 字段支持 ${ENV_VAR} 环境变量占位符</p>
+  <textarea id="configText" spellcheck="false"></textarea>
+  <div class="dlg-foot">
+    <button class="ghost" onclick="configDlg.close()">取消</button>
+    <button onclick="saveConfig()">保存</button>
+  </div>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let config = null;
+let selectedJar = null;
+let currentService = null;
+
+async function init() {
+  config = await (await fetch('/api/config')).json();
+  $('#serverSel').innerHTML = (config.servers || [])
+    .map((s) => `<option value="${s.name}">${s.name}（${s.services.length} 个服务）</option>`).join('');
+  if (config.servers?.length) onServerChange();
+  loadJobs();
+}
+
+const curServer = () => config.servers.find((s) => s.name === $('#serverSel').value);
+const curService = () => {
+  const name = document.querySelector('input[name=svc]:checked')?.value;
+  return curServer()?.services.find((x) => x.name === name);
+};
+
+function onServerChange() {
+  const srv = curServer();
+  currentService = null;
+  selectedJar = null;
+  $('#deployBtn').disabled = true;
+  $('#statusText').textContent = '';
+  $('#jarList').innerHTML = '<div class="empty">选择服务后加载 jar 列表</div>';
+  $('#jarDir').textContent = '';
+  $('#serviceList').innerHTML = srv.services.map((svc) => `
+    <label class="svc-row">
+      <input type="radio" name="svc" value="${svc.name}" onchange="onServiceChange()">
+      <span><span class="name">${svc.name}</span><br><span class="path">${svc.remoteJarPath || ''}</span></span>
+    </label>`).join('') || '<div class="empty">该服务器没有已配置的服务</div>';
+}
+
+function onServiceChange() {
+  const svc = curService();
+  currentService = svc;
+  selectedJar = null;
+  $('#deployBtn').disabled = true;
+  $('#statusText').textContent = '';
+  document.querySelectorAll('.svc-row').forEach((r) =>
+    r.classList.toggle('on', r.querySelector('input').checked));
+  $('#jarList').innerHTML = '<div class="empty">加载中...</div>';
+  $('#jarDir').textContent = '';
+  fetch(`/api/jars?server=${encodeURIComponent($('#serverSel').value)}&service=${encodeURIComponent(svc.name)}`)
+    .then((r) => r.json())
+    .then((d) => {
+      if (d.error) { $('#jarList').innerHTML = `<div class="empty">${d.error}</div>`; return; }
+      $('#jarDir').textContent = '：' + d.dir;
+      if (!d.jars.length) { $('#jarList').innerHTML = '<div class="empty">目录下没有 jar，可在下方手动上传</div>'; return; }
+      $('#jarList').innerHTML = d.jars.map((j) => `
+        <div class="jar-item" data-name="${j.name}" onclick="pickJar(this)">
+          <span>${j.name}</span>
+          <span class="meta">${(j.size / 1048576).toFixed(1)} MB · ${j.mtime.slice(0, 16).replace('T', ' ')}</span>
+        </div>`).join('');
+    });
+}
+
+function pickJar(el) {
+  document.querySelectorAll('.jar-item').forEach((e) => e.classList.remove('sel'));
+  el.classList.add('sel');
+  selectedJar = el.dataset.name;
+  $('#jarFile').value = '';
+  updateDeployBtn();
+}
+
+function updateDeployBtn() {
+  $('#deployBtn').disabled = !(currentService && (selectedJar || $('#jarFile').files.length > 0));
+}
+
+async function pingServer(btn) {
+  btn.disabled = true;
+  const r = await (await fetch('/api/ssh/ping', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ server: $('#serverSel').value }),
+  })).json();
+  $('#statusText').textContent = r.ok ? '✅ SSH 连接正常' : `❌ ${r.error}`;
+  btn.disabled = false;
+}
+
+async function showServiceStatus(btn) {
+  const svc = curService();
+  if (!svc) return alert('请先选择服务');
+  btn.disabled = true;
+  $('#statusText').textContent = '查询中...';
+  const r = await (await fetch('/api/ssh/status', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ server: $('#serverSel').value, service: svc.name }),
+  })).json();
+  $('#statusText').textContent = r.ok ? r.info : `查询失败：${r.error}`;
+  btn.disabled = false;
+}
+
+async function deploy() {
+  const upload = $('#jarFile').files[0];
+  let jarName = selectedJar;
+  if (upload) {
+    const r = await fetch('/api/upload-jar', {
+      method: 'POST',
+      headers: {
+        'x-server': $('#serverSel').value,
+        'x-service': currentService.name,
+        'x-filename': upload.name,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: upload,
+    });
+    const d = await r.json();
+    if (d.error) return alert(d.error);
+    jarName = d.jarName;
+  }
+  const r = await fetch('/api/deploy', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ server: $('#serverSel').value, service: currentService.name, jarName }),
+  });
+  const d = await r.json();
+  if (d.error) return alert(d.error);
+  d.jobs.forEach(pollJob);
+}
+
+function pollJob(id) {
+  renderJobSkeleton(id);
+  const timer = setInterval(async () => {
+    const job = await (await fetch(`/api/jobs/${id}`)).json();
+    renderJob(job);
+    if (job.status !== 'running') { clearInterval(timer); loadJobs(); }
+  }, 1500);
+}
+
+function renderJobSkeleton(id) {
+  $('#jobs').querySelector('.empty')?.remove();
+  const div = document.createElement('div');
+  div.className = 'job'; div.id = `job-${id}`;
+  div.innerHTML = `<div class="head"><b>${id}</b><span class="badge running">进行中</span></div>`;
+  $('#jobs').prepend(div);
+}
+
+function renderJob(job) {
+  const div = $(`#job-${job.id}`);
+  if (!div) return renderJobSkeleton(job.id);
+  const badge = { running: '进行中', success: '成功', failed: '失败', 'rolled-back': '已回滚' }[job.status];
+  div.innerHTML = `
+    <div class="head">
+      <b>${job.server} / ${job.service}</b>
+      <span class="badge ${job.status}">${badge}</span>
+      <span class="muted" style="margin-left:auto">${job.jarPath}</span>
+    </div>
+    ${job.steps.map((s) => `<div class="step ${s.status}"><span class="icon"></span>
+      ${s.name} <span class="smsg">${s.message || ''}</span></div>`).join('')}
+    ${job.error && job.status !== 'running' ? `<div class="step failed"><span class="icon"></span><span class="smsg">${job.error}</span></div>` : ''}`;
+}
+
+async function loadJobs() {
+  const jobs = await (await fetch('/api/jobs')).json();
+  if (!jobs.length) return;
+  $('#jobs').innerHTML = '';
+  jobs.slice(0, 20).forEach(renderJob);
+}
+
+// ---- 批量接入 ----
+let onboardServers = [];
+
+async function openOnboard() {
+  $('#onboardResult').innerHTML = '';
+  $('#onboardSaveBtn').disabled = true;
+  $('#onboardDlg').showModal();
+}
+
+function parseOnboardText(text) {
+  const entries = [];
+  let cur = null;
+  let inKey = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.includes('BEGIN') && line.includes('PRIVATE KEY')) {
+      if (!cur) { cur = { host: 'unknown-' + entries.length, pem: [] }; entries.push(cur); }
+      cur.pem = [line];
+      inKey = true;
+    } else if (inKey) {
+      cur.pem.push(line);
+      if (line.includes('END') && line.includes('PRIVATE KEY')) {
+        cur.privateKeyPem = cur.pem.join('\n');
+        inKey = false;
+      }
+    } else if (/^[\d.]+$/.test(line) || /^[a-z0-9.-]+$/i.test(line)) {
+      cur = { host: line, pem: [] };
+      entries.push(cur);
+    }
+  }
+  return entries.filter((e) => e.host);
+}
+
+async function onboardScan() {
+  const entries = parseOnboardText($('#onboardText').value);
+  if (!entries.length) return alert('请按格式粘贴：IP 行 + 私钥块');
+  const missing = entries.filter((e) => !e.privateKeyPem).map((e) => e.host);
+  if (missing.length) alert('以下主机没有对应的私钥块，将跳过：' + missing.join(', '));
+  const btn = $('#onboardScanBtn');
+  btn.disabled = true;
+  btn.textContent = '扫描中...';
+  try {
+    const r = await fetch('/api/servers/onboard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entries }),
+    });
+    const d = await r.json();
+    if (d.error) return alert(d.error);
+    onboardServers = d.servers;
+    const html = d.results.map((r) => {
+      if (!r.ok) return `<div class="job"><b>${r.host}</b> <span class="badge failed">失败</span> <span class="muted">${r.error}</span></div>`;
+      const svcs = r.services.length
+        ? r.services.map((s) =>
+            `<div class="step done"><span class="icon"></span>${s.containerName}
+              <span class="smsg">${s.remoteJarPath || '未找到唯一 jar（需手动配置）'} ${s.healthUrl ? '' : '· 无端口映射'}</span></div>`
+          ).join('')
+        : '<div class="step skipped"><span class="icon"></span><span class="smsg">未发现 Java 容器</span></div>';
+      return `<div class="job"><b>${r.host}</b> <span class="badge success">连接成功</span>${svcs}</div>`;
+    }).join('');
+    $('#onboardResult').innerHTML = html;
+    $('#onboardSaveBtn').disabled = !onboardServers.length;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 扫描';
+  }
+}
+
+async function onboardSave() {
+  const btn = $('#onboardSaveBtn');
+  btn.disabled = true;
+  const r = await fetch('/api/servers/adopt', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ servers: onboardServers }),
+  });
+  const d = await r.json();
+  btn.disabled = false;
+  if (d.error) return alert(d.error);
+  alert(`已接入 ${d.added} 个服务${d.skipped ? `，跳过同名已有服务 ${d.skipped} 个` : ''}`);
+  $('#onboardDlg').close();
+  location.reload();
+}
+
+// ---- 配置编辑 ----
+async function openConfig() {
+  const raw = await (await fetch('/api/config/raw')).text();
+  $('#configText').value = raw;
+  $('#configDlg').showModal();
+}
+
+async function saveConfig() {
+  try { JSON.parse($('#configText').value); } catch (e) { return alert('JSON 格式错误：' + e.message); }
+  const r = await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: $('#configText').value,
+  });
+  if (r.ok) { $('#configDlg').close(); location.reload(); }
+  else alert('保存失败');
+}
+
+init();
+</script>
+</body>
+</html>

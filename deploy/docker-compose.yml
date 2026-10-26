@@ -1,0 +1,21 @@
+# 按需修改挂载路径：
+#   ./config.json  配置文件（首次部署前从 config.example.json 复制并修改）
+#   ./keys         导入的服务器私钥（页面「接入服务器」自动写入）
+#   ~/.ssh         只读挂载，供 privateKeyPath 引用 ~/.ssh 下的密钥
+#   ~/Developer/jars 本地构建产物目录（对应配置中的 ~/Developer/jars/<服务名>）
+services:
+  java-updater:
+    build: ..
+    image: java-updater:latest
+    container_name: java-updater
+    restart: unless-stopped
+    ports:
+      - "5230:5230"
+    volumes:
+      - ./config.json:/app/config.json
+      - ./keys:/app/keys
+      - ${HOME}/.ssh:/root/.ssh:ro
+      - ${HOME}/Developer/jars:/root/Developer/jars
+    environment:
+      - PORT=5230
+      - HOME=/root
