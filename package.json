@@ -1,5 +1,5 @@
 {
-  "name": "april-java-updater",
+  "name": "april-updater",
   "version": "0.1.0",
   "description": "多服务器 Java 服务自动化发布/回滚工具",
   "type": "module",

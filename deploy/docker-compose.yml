@@ -1,13 +1,15 @@
 # 按需修改挂载路径：
-#   ./config.json  配置文件（首次部署前从 config.example.json 复制并修改）
-#   ./keys         导入的服务器私钥（页面「接入服务器」自动写入）
-#   ~/.ssh         只读挂载，供 privateKeyPath 引用 ~/.ssh 下的密钥
+#   ./config.json    配置文件（首次部署前从 config.example.json 复制并修改）
+#   ./keys           导入的服务器私钥（页面「接入服务器」自动写入）
+#   ~/.ssh           只读挂载，供 privateKeyPath 引用 ~/.ssh 下的密钥
 #   ~/Developer/jars 本地构建产物目录（对应配置中的 ~/Developer/jars/<服务名>）
 services:
-  java-updater:
-    build: ..
-    image: java-updater:latest
-    container_name: java-updater
+  april-updater:
+    # 直接使用 GitHub Actions 自动发布的公开镜像
+    image: ghcr.io/april-projects/april-updater:latest
+    # 本地构建时注释掉上面的 image 行，改用下面这行
+    # build: ..
+    container_name: april-updater
     restart: unless-stopped
     ports:
       - "5230:5230"

@@ -55,24 +55,28 @@
 ### 方式一：Node 直接运行（Node ≥ 20）
 
 ```bash
-git clone https://github.com/april-projects/april-java-updater.git
-cd april-java-updater
+git clone https://github.com/april-projects/april-updater.git
+cd april-updater
 npm install
 cp config.example.json config.json   # 按需修改
 npm start
 # 打开 http://127.0.0.1:5230
 ```
 
-### 方式二：Docker Compose（推荐）
+### 方式二：Docker（推荐）
+
+镜像由 GitHub Actions 自动构建并发布到 GHCR（多架构 amd64/arm64，公开可用）：
 
 ```bash
-git clone https://github.com/april-projects/april-java-updater.git
-cd april-java-updater/deploy
+docker pull ghcr.io/april-projects/april-updater:latest
+
+git clone https://github.com/april-projects/april-updater.git
+cd april-updater/deploy
 cp ../config.example.json ./config.json   # 按需修改
-docker compose up -d --build
+docker compose up -d
 ```
 
-容器需要挂载：配置文件、导入的私钥目录、`~/.ssh`（只读）、本地 jar 产物目录。
+本地构建则注释掉 compose 里的 `image` 行、启用 `build: ..` 后 `docker compose up -d --build`。容器需要挂载：配置文件、导入的私钥目录、`~/.ssh`（只读）、本地 jar 产物目录。
 
 ## 批量接入服务器
 
@@ -149,7 +153,7 @@ b3BlbnNzaC1rZXktdjE...
 ## 目录结构
 
 ```
-april-java-updater/
+april-updater/
 ├── server.js              # Express API 与静态资源
 ├── lib/
 │   ├── ssh-client.js      # SSH/SFTP 客户端封装（ssh2）
