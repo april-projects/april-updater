@@ -22,7 +22,12 @@ function resolveDir(dir) {
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// index.html 禁止缓存，避免前端更新后浏览器沿用旧脚本
+app.get('/', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 const deployer = new Deployer();
 
@@ -77,9 +82,15 @@ app.post('/api/upload-jar', express.raw({ type: '*/*', limit: '512mb' }), (req, 
   if (!service?.localJarDir) return res.status(400).json({ error: '该服务未配置 localJarDir' });
   const buf = req.body;
   if (!buf?.length) return res.status(400).json({ error: '空的上传内容' });
-  const jarName = path.basename(req.headers['x-filename'] || 'upload.jar');
-  fs.writeFileSync(path.join(resolveDir(service.localJarDir), jarName), buf);
-  res.json({ jarName });
+  const dir = resolveDir(service.localJarDir);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const jarName = path.basename(req.headers['x-filename'] || 'upload.jar');
+    fs.writeFileSync(path.join(dir, jarName), buf);
+    res.json({ jarName });
+  } catch (err) {
+    res.status(500).json({ error: `写入失败：${err.message}` });
+  }
 });
 
 // ---- SSH 连通性 ----
@@ -104,7 +115,7 @@ app.post('/api/ssh/status', async (req, res) => {
   const jar = service.remoteJarPath;
   const cmd = [
     `[ -f '${jar}' ] && stat -c '%y %s' '${jar}' || echo '无 jar 文件'`,
-    `[ -f '${jar}.bak' ] && echo '存在备份 ${jar}.bak' || true`,
+    `b=$(ls -1d '${jar}.bak.'* 2>/dev/null | sort -r | head -1); [ -n "$b" ] && echo "最新备份 $b" || echo '无备份'`,
     service.containerName
       ? `docker ps -a --filter name=^${service.containerName}$ --format '{{.Names}} {{.Status}}' 2>/dev/null || true`
       : '',
@@ -231,6 +242,29 @@ app.post('/api/deploy', (req, res) => {
 
 app.get('/api/jobs', (req, res) => {
   res.json(deployer.listJobs());
+});
+
+// 持久化部署历史 + 按服务器/服务聚合的统计
+app.get('/api/history', (req, res) => {
+  const records = deployer.readHistory();
+  const stats = {};
+  for (const r of records) {
+    const key = `${r.server}/${r.service}`;
+    const s = (stats[key] ||= {
+      server: r.server, service: r.service,
+      total: 0, success: 0, failed: 0, rolledBack: 0,
+      lastDeployAt: null, lastStatus: null,
+    });
+    s.total++;
+    if (r.status === 'success') s.success++;
+    else if (r.status === 'failed') s.failed++;
+    else if (r.status === 'rolled-back') s.rolledBack++;
+    if (!s.lastDeployAt || r.createdAt > s.lastDeployAt) {
+      s.lastDeployAt = r.createdAt;
+      s.lastStatus = r.status;
+    }
+  }
+  res.json({ records: records.slice(0, 200), stats: Object.values(stats) });
 });
 
 app.get('/api/jobs/:id', (req, res) => {

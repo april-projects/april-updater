@@ -221,7 +221,7 @@
     <label>或上传新 jar</label>
     <input type="file" id="jarFile" accept=".jar" onchange="updateDeployBtn()">
     <button id="deployBtn" onclick="deploy()" disabled>🚀 开始部署</button>
-    <div class="hint">
+    <div class="hint" id="deployHint">
       <b>部署流程</b>：备份旧 jar → 上传新 jar → 重启容器 → 健康检查轮询；
       任一步失败自动<b>回滚</b>到旧版本。
     </div>
@@ -229,6 +229,7 @@
 
   <section class="card full">
     <h2><span class="n">3</span>部署进度与历史</h2>
+    <div id="stats"></div>
     <div id="jobs"><div class="empty">暂无部署记录</div></div>
   </section>
 </main>
@@ -310,6 +311,10 @@ function onServiceChange() {
     r.classList.toggle('on', r.querySelector('input').checked));
   $('#jarList').innerHTML = '<div class="empty">加载中...</div>';
   $('#jarDir').textContent = '';
+  if (svc.remoteJarPath) {
+    $('#deployHint').innerHTML =
+      `<b>部署目标</b>：${svc.remoteJarPath}<br>本地 jar 文件名可与线上不同（如本地 df-admin.jar → 线上 cqai-admin.jar），部署时自动按线上路径命名。`;
+  }
   fetch(`/api/jars?server=${encodeURIComponent($('#serverSel').value)}&service=${encodeURIComponent(svc.name)}`)
     .then((r) => r.json())
     .then((d) => {
@@ -362,6 +367,11 @@ async function showServiceStatus(btn) {
 async function deploy() {
   const upload = $('#jarFile').files[0];
   let jarName = selectedJar;
+  if (!confirm(
+    `确认部署？\n\n服务器：${$('#serverSel').value}\n服务：${currentService.name}\n` +
+    `jar：${upload ? upload.name : jarName}\n线上路径：${currentService.remoteJarPath || '（未配置）'}\n\n` +
+    `流程：备份旧 jar → 上传 → 重启 → 健康检查，失败自动回滚。`
+  )) return;
   if (upload) {
     const r = await fetch('/api/upload-jar', {
       method: 'POST',
@@ -387,7 +397,7 @@ async function deploy() {
 }
 
 function pollJob(id) {
-  renderJobSkeleton(id);
+  if (!$(`#${id}`)) renderJobSkeleton(id);
   const timer = setInterval(async () => {
     const job = await (await fetch(`/api/jobs/${id}`)).json();
     renderJob(job);
@@ -398,7 +408,7 @@ function pollJob(id) {
 function renderJobSkeleton(id) {
   $('#jobs').querySelector('.empty')?.remove();
   const div = document.createElement('div');
-  div.className = 'job'; div.id = `job-${id}`;
+  div.className = 'job'; div.id = id;
   div.innerHTML = `<div class="head"><b>${id}</b><span class="badge running">进行中</span></div>`;
   $('#jobs').prepend(div);
 }
@@ -419,10 +429,36 @@ function renderJob(job) {
 }
 
 async function loadJobs() {
-  const jobs = await (await fetch('/api/jobs')).json();
-  if (!jobs.length) return;
+  const [jobs, hist] = await Promise.all([
+    (await fetch('/api/jobs')).json(),
+    (await fetch('/api/history')).json(),
+  ]);
+  renderStats(hist.stats);
+  const running = jobs.filter((j) => j.status === 'running');
+  const records = hist.records.filter((r) => !running.some((j) => j.id === r.id)).slice(0, 30);
+  const list = [...running, ...records];
+  if (!list.length) { $('#jobs').innerHTML = '<div class="empty">暂无部署记录</div>'; return; }
   $('#jobs').innerHTML = '';
-  jobs.slice(0, 20).forEach(renderJob);
+  list.forEach(renderJob);
+  running.forEach((j) => pollJob(j.id));
+}
+
+function renderStats(stats) {
+  if (!stats || !stats.length) { $('#stats').innerHTML = ''; return; }
+  const badge = { success: '成功', failed: '失败', 'rolled-back': '已回滚' };
+  $('#stats').innerHTML = `
+    <div class="jar-list" style="max-height:none; margin-bottom:14px">
+      <div class="jar-item" style="cursor:default; font-weight:600; color:var(--muted)">
+        <span>服务器 / 服务</span><span class="meta">总计 · 成功 · 失败 · 回滚 · 最近部署</span>
+      </div>
+      ${stats.map((s) => `
+        <div class="jar-item" style="cursor:default">
+          <span>${s.server} / ${s.service}</span>
+          <span class="meta">${s.total} · ${s.success} · ${s.failed} · ${s.rolledBack} · ${
+            s.lastDeployAt ? s.lastDeployAt.slice(0, 16).replace('T', ' ') + '（' + (badge[s.lastStatus] || s.lastStatus) + '）' : '—'
+          }</span>
+        </div>`).join('')}
+    </div>`;
 }
 
 // ---- 批量接入 ----
