@@ -2,6 +2,7 @@
   "servers": [
     {
       "name": "1.2.3.4",
+      "alias": "香港-订单服务",
       "host": "1.2.3.4",
       "port": 22,
       "username": "root",
@@ -19,6 +20,14 @@
           "restartCommand": "docker restart order-service",
           "restartTimeoutSec": 60,
           "healthUrl": "http://1.2.3.4:8080/actuator/health"
+        }
+      ],
+      "sites": [
+        {
+          "name": "web-console",
+          "domain": "console.example.com",
+          "localDistDir": "~/Developer/dists/web-console",
+          "remoteRoot": "/www/sites/console.example.com/index"
         }
       ]
     }
