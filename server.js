@@ -1,5 +1,6 @@
 import express from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import url from 'node:url';
 import { sshExecOnce } from './lib/ssh-client.js';
@@ -237,6 +238,86 @@ app.post('/api/deploy', (req, res) => {
   const jarPath = path.join(resolveDir(svc.localJarDir), jarName);
   if (!fs.existsSync(jarPath)) return res.status(400).json({ error: `jar 不存在：${jarPath}` });
   const job = deployer.deploy(srv, serviceName, jarPath, req.body);
+  res.json({ jobs: [job.id] });
+});
+
+// ---- 前端站点 ----
+// 手动上传的 dist 包临时存放目录（按站点名分目录）
+const distUploadDir = (siteName) => path.join(os.tmpdir(), 'april-updater-dist', siteName.replace(/[^\w.-]/g, '_'));
+
+// 按 nginx 配置扫描前端站点（域名 → 根目录）
+app.post('/api/sites/scan', async (req, res) => {
+  const config = loadConfig();
+  const server = (config.servers || []).find((s) => s.name === req.body.server);
+  if (!server) return res.status(404).json({ error: '未找到目标服务器配置' });
+  try {
+    const sites = await new Provisioner().scanSites(server);
+    res.json({ sites });
+  } catch (err) {
+    res.json({ sites: [], error: err.message });
+  }
+});
+
+// 把扫描结果合并进 config.json 的 sites（同名站点跳过）
+app.post('/api/sites/adopt', (req, res) => {
+  const { server: serverName, sites } = req.body;
+  const config = loadConfig();
+  const srv = (config.servers || []).find((s) => s.name === serverName);
+  if (!srv) return res.status(404).json({ error: '未找到目标服务器配置' });
+  if (!Array.isArray(sites)) return res.status(400).json({ error: '需要 sites 数组' });
+  srv.sites = srv.sites || [];
+  let added = 0;
+  let skipped = 0;
+  for (const s of sites) {
+    if (!s.remoteRoot) continue;
+    if (srv.sites.some((x) => x.remoteRoot === s.remoteRoot || x.name === s.name)) { skipped++; continue; }
+    srv.sites.push({
+      name: s.name || s.domains?.[0] || path.basename(s.remoteRoot),
+      domain: s.domains?.[0] || '',
+      localDistDir: s.localDistDir || `~/Developer/dists/${s.name || path.basename(s.remoteRoot)}`,
+      remoteRoot: s.remoteRoot,
+    });
+    added++;
+  }
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+  res.json({ added, skipped });
+});
+
+// 上传 dist 压缩包（tar.gz/zip），存到临时目录，部署时直接使用
+app.post('/api/upload-dist', express.raw({ type: '*/*', limit: '512mb' }), (req, res) => {
+  const config = loadConfig();
+  const server = (config.servers || []).find((s) => s.name === req.headers['x-server']);
+  const site = server?.sites?.find((x) => x.name === req.headers['x-site']);
+  if (!site) return res.status(400).json({ error: '该服务器未配置此站点' });
+  const buf = req.body;
+  if (!buf?.length) return res.status(400).json({ error: '空的上传内容' });
+  const name = (req.headers['x-filename'] || 'dist.tar.gz').replace(/[^\w.-]/g, '_');
+  if (!/\.(tar\.gz|tgz|zip)$/.test(name)) return res.status(400).json({ error: '仅支持 tar.gz / tgz / zip 包' });
+  try {
+    const dir = distUploadDir(site.name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), buf);
+    res.json({ archiveName: name });
+  } catch (err) {
+    res.status(500).json({ error: `写入失败：${err.message}` });
+  }
+});
+
+app.post('/api/deploy-site', (req, res) => {
+  const { server: serverName, site: siteName, archiveName } = req.body;
+  const config = loadConfig();
+  const srv = (config.servers || []).find((s) => s.name === serverName);
+  if (!srv) return res.status(404).json({ error: `服务器不存在：${serverName}` });
+  const site = (srv.sites || []).find((x) => x.name === siteName);
+  if (!site) return res.status(404).json({ error: `站点不存在：${siteName}` });
+  let archivePath = null;
+  if (archiveName) {
+    archivePath = path.join(distUploadDir(site.name), path.basename(archiveName));
+    if (!fs.existsSync(archivePath)) return res.status(400).json({ error: `dist 包不存在：${archivePath}` });
+  } else if (!site.localDistDir || !fs.existsSync(resolveDir(site.localDistDir))) {
+    return res.status(400).json({ error: `本地 dist 目录不存在：${site.localDistDir || '未配置 localDistDir'}` });
+  }
+  const job = deployer.deploySite(srv, siteName, archivePath);
   res.json({ jobs: [job.id] });
 });
 

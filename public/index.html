@@ -207,18 +207,21 @@
     <select id="serverSel" onchange="onServerChange()"></select>
     <label>该服务器上的 Java 服务</label>
     <div class="svc-list" id="serviceList"><div class="empty">选择服务器后列出服务</div></div>
+    <label>该服务器上的前端站点</label>
+    <div class="svc-list" id="siteList"><div class="empty">选择服务器后列出站点</div></div>
     <div class="toolbar">
       <button class="ghost sm" onclick="pingServer(this)">⚡ 测试 SSH</button>
       <button class="ghost sm" onclick="showServiceStatus(this)">📊 服务状态</button>
+      <button class="ghost sm" onclick="scanSites(this)">🌐 扫描站点</button>
     </div>
     <div id="statusText"></div>
   </section>
 
   <section class="card">
-    <h2><span class="n">2</span>选择 jar 并部署</h2>
+    <h2><span class="n">2</span>选择产物并部署</h2>
     <label>构建产物目录 <span id="jarDir" class="muted"></span></label>
     <div class="jar-list" id="jarList"><div class="empty">选择服务后加载 jar 列表</div></div>
-    <label>或上传新 jar</label>
+    <label id="uploadLabel">或上传新 jar</label>
     <input type="file" id="jarFile" accept=".jar" onchange="updateDeployBtn()">
     <button id="deployBtn" onclick="deploy()" disabled>🚀 开始部署</button>
     <div class="hint" id="deployHint">
@@ -271,11 +274,17 @@ const $ = (s) => document.querySelector(s);
 let config = null;
 let selectedJar = null;
 let currentService = null;
+let currentSite = null;
 
 async function init() {
   config = await (await fetch('/api/config')).json();
   $('#serverSel').innerHTML = (config.servers || [])
-    .map((s) => `<option value="${s.name}">${s.name}（${s.services.length} 个服务）</option>`).join('');
+    .map((s) => {
+      const label = s.alias ? `${s.alias}（${s.name}）` : s.name;
+      const names = (s.services || []).map((x) => x.name);
+      const summary = names.length <= 3 ? names.join('、') : `${names.slice(0, 2).join('、')} 等 ${names.length} 个服务`;
+      return `<option value="${s.name}" title="${names.join(', ')}">${label} · ${summary || '无服务'}</option>`;
+    }).join('');
   if (config.servers?.length) onServerChange();
   loadJobs();
 }
@@ -285,32 +294,76 @@ const curService = () => {
   const name = document.querySelector('input[name=svc]:checked')?.value;
   return curServer()?.services.find((x) => x.name === name);
 };
+const curSite = () => {
+  const name = document.querySelector('input[name=site]:checked')?.value;
+  return curServer()?.sites?.find((x) => x.name === name);
+};
+const serverLabel = (name) => {
+  const s = config.servers?.find((x) => x.name === name);
+  return s?.alias ? `${s.alias}（${s.name}）` : name;
+};
 
 function onServerChange() {
   const srv = curServer();
   currentService = null;
+  currentSite = null;
   selectedJar = null;
   $('#deployBtn').disabled = true;
   $('#statusText').textContent = '';
   $('#jarList').innerHTML = '<div class="empty">选择服务后加载 jar 列表</div>';
   $('#jarDir').textContent = '';
-  $('#serviceList').innerHTML = srv.services.map((svc) => `
+  $('#serviceList').innerHTML = (srv.services || []).map((svc) => `
     <label class="svc-row">
       <input type="radio" name="svc" value="${svc.name}" onchange="onServiceChange()">
       <span><span class="name">${svc.name}</span><br><span class="path">${svc.remoteJarPath || ''}</span></span>
     </label>`).join('') || '<div class="empty">该服务器没有已配置的服务</div>';
+  renderSites();
+}
+
+function renderSites() {
+  const srv = curServer();
+  $('#siteList').innerHTML = (srv.sites || []).map((site) => `
+    <label class="svc-row">
+      <input type="radio" name="site" value="${site.name}" onchange="onSiteChange()">
+      <span><span class="name">${site.name}</span><br><span class="path">${site.domain || ''} → ${site.remoteRoot || ''}</span></span>
+    </label>`).join('') || '<div class="empty">未配置前端站点，可点「🌐 扫描站点」自动发现</div>';
+}
+
+function onSiteChange() {
+  const site = curSite();
+  currentSite = site;
+  selectedJar = null;
+  currentService = null;
+  $('#deployBtn').disabled = true;
+  $('#statusText').textContent = '';
+  document.querySelectorAll('.svc-row').forEach((r) =>
+    r.classList.toggle('on', r.querySelector('input').checked));
+  $('#jarDir').textContent = '：' + (site.localDistDir || '（未配置，请手动上传 dist 包）');
+  $('#jarList').innerHTML = '<div class="empty">将打包该目录整体发布（也可在下方上传 dist 压缩包）</div>';
+  $('#uploadLabel').textContent = '或上传 dist 压缩包（tar.gz / zip，包内为 dist 内容）';
+  $('#jarFile').accept = '.tar.gz,.tgz,.zip';
+  $('#deployBtn').textContent = '🚀 部署前端';
+  $('#deployHint').innerHTML =
+    `<b>部署目标</b>：${site.remoteRoot}<br>` +
+    `流程：打包 dist → 备份旧目录 → 上传解压 → 验证 index.html；失败自动<b>回滚</b>。`;
 }
 
 function onServiceChange() {
   const svc = curService();
   currentService = svc;
+  currentSite = null;
   selectedJar = null;
   $('#deployBtn').disabled = true;
+  $('#deployBtn').textContent = '🚀 开始部署';
   $('#statusText').textContent = '';
   document.querySelectorAll('.svc-row').forEach((r) =>
     r.classList.toggle('on', r.querySelector('input').checked));
   $('#jarList').innerHTML = '<div class="empty">加载中...</div>';
   $('#jarDir').textContent = '';
+  $('#uploadLabel').textContent = '或上传新 jar';
+  $('#jarFile').accept = '.jar';
+  $('#deployHint').innerHTML =
+    '<b>部署流程</b>：备份旧 jar → 上传新 jar → 重启容器 → 健康检查轮询；任一步失败自动<b>回滚</b>到旧版本。';
   if (svc.remoteJarPath) {
     $('#deployHint').innerHTML =
       `<b>部署目标</b>：${svc.remoteJarPath}<br>本地 jar 文件名可与线上不同（如本地 df-admin.jar → 线上 cqai-admin.jar），部署时自动按线上路径命名。`;
@@ -338,6 +391,10 @@ function pickJar(el) {
 }
 
 function updateDeployBtn() {
+  if (currentSite) {
+    $('#deployBtn').disabled = !currentSite;
+    return;
+  }
   $('#deployBtn').disabled = !(currentService && (selectedJar || $('#jarFile').files.length > 0));
 }
 
@@ -365,6 +422,7 @@ async function showServiceStatus(btn) {
 }
 
 async function deploy() {
+  if (currentSite) return deploySite();
   const upload = $('#jarFile').files[0];
   let jarName = selectedJar;
   if (!confirm(
@@ -396,6 +454,66 @@ async function deploy() {
   d.jobs.forEach(pollJob);
 }
 
+async function deploySite() {
+  const upload = $('#jarFile').files[0];
+  if (!confirm(
+    `确认部署前端？\n\n服务器：${$('#serverSel').value}\n站点：${currentSite.name}\n` +
+    `dist 来源：${upload ? `上传包 ${upload.name}` : `本地目录 ${currentSite.localDistDir}`}\n` +
+    `线上目录：${currentSite.remoteRoot}\n\n流程：打包 → 备份旧目录 → 上传解压 → 验证，失败自动回滚。`
+  )) return;
+  let archiveName = null;
+  if (upload) {
+    const r = await fetch('/api/upload-dist', {
+      method: 'POST',
+      headers: {
+        'x-server': $('#serverSel').value,
+        'x-site': currentSite.name,
+        'x-filename': upload.name,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: upload,
+    });
+    const d = await r.json();
+    if (d.error) return alert(d.error);
+    archiveName = d.archiveName;
+  }
+  const r = await fetch('/api/deploy-site', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ server: $('#serverSel').value, site: currentSite.name, archiveName }),
+  });
+  const d = await r.json();
+  if (d.error) return alert(d.error);
+  d.jobs.forEach(pollJob);
+}
+
+async function scanSites(btn) {
+  btn.disabled = true;
+  $('#statusText').textContent = '正在按 nginx 配置扫描站点...';
+  try {
+    const r = await (await fetch('/api/sites/scan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ server: $('#serverSel').value }),
+    })).json();
+    if (r.error) { $('#statusText').textContent = `扫描失败：${r.error}`; return; }
+    if (!r.sites.length) { $('#statusText').textContent = '未在 nginx/openresty 配置中发现站点（server_name + root）'; return; }
+    const list = r.sites.map((s) => `  ${s.domains.join(', ')} → ${s.root}`).join('\n');
+    if (!confirm(`扫描到 ${r.sites.length} 个站点：\n${list}\n\n保存到配置？（localDistDir 默认 ~/Developer/dists/<站点名>，可稍后在「编辑配置」里改）`)) {
+      $('#statusText').textContent = list;
+      return;
+    }
+    const a = await (await fetch('/api/sites/adopt', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ server: $('#serverSel').value, sites: r.sites }),
+    })).json();
+    if (a.error) { $('#statusText').textContent = `保存失败：${a.error}`; return; }
+    config = await (await fetch('/api/config')).json();
+    renderSites();
+    $('#statusText').textContent = `已保存 ${a.added} 个站点${a.skipped ? `，跳过已有 ${a.skipped} 个` : ''}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function pollJob(id) {
   if (!$(`#${id}`)) renderJobSkeleton(id);
   const timer = setInterval(async () => {
@@ -419,7 +537,7 @@ function renderJob(job) {
   const badge = { running: '进行中', success: '成功', failed: '失败', 'rolled-back': '已回滚' }[job.status];
   div.innerHTML = `
     <div class="head">
-      <b>${job.server} / ${job.service}</b>
+      <b>${serverLabel(job.server)} / ${job.service}</b>
       <span class="badge ${job.status}">${badge}</span>
       <span class="muted" style="margin-left:auto">${job.jarPath}</span>
     </div>
@@ -453,7 +571,7 @@ function renderStats(stats) {
       </div>
       ${stats.map((s) => `
         <div class="jar-item" style="cursor:default">
-          <span>${s.server} / ${s.service}</span>
+          <span>${serverLabel(s.server)} / ${s.service}</span>
           <span class="meta">${s.total} · ${s.success} · ${s.failed} · ${s.rolledBack} · ${
             s.lastDeployAt ? s.lastDeployAt.slice(0, 16).replace('T', ' ') + '（' + (badge[s.lastStatus] || s.lastStatus) + '）' : '—'
           }</span>

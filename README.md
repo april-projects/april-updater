@@ -136,6 +136,7 @@ b3BlbnNzaC1rZXktdjE...
 | 字段 | 说明 |
 |---|---|
 | 服务器 `privateKeyPath` / `password` | SSH 认证方式二选一；`password` 支持 `${ENV_VAR}` 环境变量占位符 |
+| 服务器 `alias` | 可选，页面显示用的别名（如「香港-订单服务」），部署历史与统计仍按 `name`（IP）聚合 |
 | 服务 `localJarDir` | 本地构建产物目录，页面按修改时间倒序扫描 `.jar`，也支持页面上传 |
 | 服务 `remoteJarPath` | 服务器上 jar 完整路径，部署时自动备份为 `<path>.bak.<日期时间>`（保留最近 5 份）；**本地 jar 文件名可与线上不同**（如本地 `df-admin.jar` → 线上 `cqai-admin.jar`），部署时按此路径命名，无需改名 |
 | 服务 `restartCommand` | 重启命令，任意可执行 shell 命令均可 |
@@ -143,12 +144,36 @@ b3BlbnNzaC1rZXktdjE...
 
 日常发版：把构建好的 jar 放进 `localJarDir`（或页面上传）→ 选服务器、选服务、选 jar → **开始部署**，盯进度条就行。
 
+## 前端站点部署
+
+除 jar 外，还支持部署前端 dist。配置里每台服务器可加 `sites` 数组：
+
+```json
+"sites": [
+  {
+    "name": "web-console",
+    "domain": "console.example.com",
+    "localDistDir": "~/Developer/dists/web-console",
+    "remoteRoot": "/www/sites/console.example.com/index"
+  }
+]
+```
+
+| 字段 | 说明 |
+|---|---|
+| 站点 `localDistDir` | 本地 dist 构建产物目录，部署时整体打包为 tar.gz（不选目录时也可直接上传 tar.gz/zip 包） |
+| 站点 `remoteRoot` | 服务器上前端根目录，部署时整体备份为 `<root>.bak.<日期时间>`（保留最近 5 份）后解压覆盖 |
+
+流程：**本地打包 dist → 备份旧目录 → SFTP 上传 → 远端解压 → 验证 index.html**，任一步失败自动回滚到旧目录。
+
+**按域名自动发现站点**：页面上点「🌐 扫描站点」，工具会 SSH 到服务器解析 nginx/openresty 配置（覆盖 `/etc/nginx`、宝塔、1Panel 路径），把 `server_name → root` 映射保存为站点配置；`localDistDir` 默认 `~/Developer/dists/<站点名>`，可在「编辑配置」里改成实际 dist 目录。
+
 ## 安全设计
 
 - 私钥文件权限 `600`，仅存于工具本机 `keys/` 目录，永不回显到页面、不写入配置
 - 配置中的密码支持环境变量占位符（`${VAR}`），避免明文入库
 - 页面 API 永远不返回密钥内容
-- 工具对远端的写操作仅限：`remoteJarPath` 与它的 `.bak`，外加执行你自己配置的 `restartCommand`
+- 工具对远端的写操作仅限：`remoteJarPath` 与它的 `.bak`、站点 `remoteRoot` 与它的 `.bak`（`rm -rf` 仅用于回滚时还原站点目录），外加执行你自己配置的 `restartCommand`
 - 建议为工具单独生成一对密钥，并在服务器上只授予部署所需权限
 
 ## 目录结构
